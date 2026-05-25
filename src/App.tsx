@@ -229,7 +229,6 @@ export default function App() {
     setAiFixBanner(null);
   };
 
-  const showDownloadButton = appState === 'converted' || appState === 'downloaded';
   const hasConverted = nodes.length > 0;
 
   return (
