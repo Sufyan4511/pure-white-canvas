@@ -912,32 +912,33 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
     // Strip <i>/<svg> icon descendants from button text and capture as selected_icon
     const clone = el.cloneNode(true) as Element;
     const iconNode = clone.querySelector('i[class*="fa"], i[class*="icon"], svg');
-    let iconValue = '';
+    let iconInfo: { value: string; library: string } | null = null;
     if (iconNode) {
-      if (iconNode.tagName.toLowerCase() !== 'svg') iconValue = extractFaIconValue(iconNode);
+      if (iconNode.tagName.toLowerCase() !== 'svg') iconInfo = extractFaIcon(iconNode);
       iconNode.remove();
     }
     const text = clone.textContent?.trim() || fullText;
     const ss = stylesToElementorSettings(styles, 'button');
     const settings: Record<string, unknown> = { text, button_type: 'default', link: { url: href }, ...ss };
-    if (iconValue) settings.selected_icon = { value: iconValue, library: 'fa-solid' };
+    if (iconInfo) settings.selected_icon = { value: iconInfo.value, library: iconInfo.library };
     return { widget: 'button', badge: 'a', preview: `"${text.slice(0, 50)}"${href ? ` → ${href}` : ''}`, settings };
   }
 
   if (tag === 'button') {
     const clone = el.cloneNode(true) as Element;
     const iconNode = clone.querySelector('i[class*="fa"], i[class*="icon"], svg');
-    let iconValue = '';
+    let iconInfo: { value: string; library: string } | null = null;
     if (iconNode) {
-      if (iconNode.tagName.toLowerCase() !== 'svg') iconValue = extractFaIconValue(iconNode);
+      if (iconNode.tagName.toLowerCase() !== 'svg') iconInfo = extractFaIcon(iconNode);
       iconNode.remove();
     }
     const text = clone.textContent?.trim() || '';
     const ss = stylesToElementorSettings(styles, 'button');
     const settings: Record<string, unknown> = { text, button_type: 'default', ...ss };
-    if (iconValue) settings.selected_icon = { value: iconValue, library: 'fa-solid' };
+    if (iconInfo) settings.selected_icon = { value: iconInfo.value, library: iconInfo.library };
     return { widget: 'button', badge: 'button', preview: `"${text.slice(0, 50)}"`, settings };
   }
+
 
 
   if (tag === 'p') {
