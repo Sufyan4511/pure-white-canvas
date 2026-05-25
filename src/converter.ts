@@ -1214,7 +1214,7 @@ export function parseHTML(html: string): ElementNode[] {
   idCounter = 0;
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
-  const { computedStyles, customCssPerElement } = buildStyleMap(doc);
+  const { computedStyles, customCssPerElement, rootPrelude } = buildStyleMap(doc);
   const ctx: ParseContext = { computedStyles, customCssPerElement };
   const nodes: ElementNode[] = [];
 
@@ -1223,8 +1223,16 @@ export function parseHTML(html: string): ElementNode[] {
     if (node) nodes.push(node);
   }
 
+  // Inject font/icon @imports + @font-face into the first root element so the editor renders correctly
+  if (rootPrelude && nodes.length > 0) {
+    const first = nodes[0];
+    const existing = (first.settings.custom_css as string) || '';
+    first.settings.custom_css = existing ? `${rootPrelude}\n\n${existing}` : rootPrelude;
+  }
+
   return nodes;
 }
+
 
 // --- Elementor JSON generation with correct schema ---
 
