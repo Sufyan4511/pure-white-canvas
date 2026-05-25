@@ -870,14 +870,16 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
       });
       return { widget: 'image-carousel', badge: tag, preview: `${items.length} images`, settings: { carousel: images } };
     }
-    const hasLinks = items.some(li => li.querySelector('a'));
-    if (hasLinks) {
-      const links = items.map(li => {
+    const linkItems = items.filter(li => li.querySelector('a'));
+    // Strict nav-menu: require 4+ link items
+    if (linkItems.length >= 4) {
+      const links = linkItems.map(li => {
         const a = li.querySelector('a');
         return { text: a?.textContent?.trim() || li.textContent?.trim() || '', url: a?.getAttribute('href') || '' };
       });
-      return { widget: 'nav-menu', badge: tag, preview: `${items.length} nav items`, settings: { menu_items: links } };
+      return { widget: 'nav-menu', badge: tag, preview: `${links.length} nav items`, settings: { menu_items: links } };
     }
+
     const ss = stylesToElementorSettings(styles, 'text-editor');
     return { widget: 'text-editor', badge: tag, preview: `List — ${items.length} items`, settings: { editor: el.outerHTML, ...ss } };
   }
