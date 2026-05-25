@@ -1054,9 +1054,11 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
         const descEl = Array.from(el.querySelectorAll('p')).find(p => p.textContent?.trim());
         const description = descEl?.textContent?.trim() || '';
         const iconTag = iconEl.tagName.toLowerCase();
+        const iconInfo = iconTag === 'svg' ? null : extractFaIcon(iconEl);
         const iconSettings: Record<string, unknown> = iconTag === 'svg'
           ? { selected_icon: { value: '', library: 'svg' }, icon_html: iconEl.outerHTML }
-          : { selected_icon: { value: extractFaIconValue(iconEl), library: 'fa-solid' } };
+          : { selected_icon: { value: iconInfo!.value, library: iconInfo!.library } };
+
         const ss = stylesToElementorSettings(styles, 'icon-box');
         return {
           widget: 'icon-box',
