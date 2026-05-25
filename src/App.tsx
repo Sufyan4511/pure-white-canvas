@@ -4,7 +4,7 @@ import { parseHTML, buildElementorJSON, countElements, type ElementNode, type Wi
 import ElementTree from './ElementTree';
 import AIPanel from './AIPanel';
 import type { AIFix } from './aiService';
-import { runAIAnalysis } from './aiService';
+
 
 type AppState = 'idle' | 'fileSelected' | 'converting' | 'converted' | 'downloaded';
 type ActiveTab = 'preview' | 'tree';
@@ -67,8 +67,7 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
 
   // Persist overrides across reloads
   useEffect(() => {
@@ -159,24 +158,11 @@ export default function App() {
       const parsed = parseHTML(fileInfo.content);
       if (parsed.length === 0) throw new Error('No parseable elements found.');
 
-      let finalNodes = parsed;
-      let autoFixed = 0;
-
-      // Auto-run AI analysis (Lovable AI Gateway) to improve widget detection
-      setConvertPhase('ai');
-      try {
-        const res = await runAIAnalysis(fileInfo.content, parsed, supabaseUrl, supabaseAnonKey);
-        if (res.fixes.length > 0) {
-          const { nodes: patched, applied } = applyAIFixes(parsed, res.fixes);
-          finalNodes = patched;
-          autoFixed = applied;
-        }
-      } catch {
-        // AI failure is non-fatal — proceed with unpatched nodes
-      }
-
+      const finalNodes = parsed;
+      const autoFixed = 0;
 
       setConvertPhase(null);
+
       const count = countElements(finalNodes);
       const json = buildElementorJSON(finalNodes, fileInfo.name);
       setNodes(finalNodes);
