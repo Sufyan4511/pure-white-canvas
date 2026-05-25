@@ -506,8 +506,8 @@ function stylesToElementorSettings(styles: ParsedStyles, widgetType: WidgetType)
     }
   }
 
-  // Background image (containers only)
-  if (!isWidget && styles.backgroundImage && styles.backgroundImage !== 'none') {
+  // Background image (containers AND widgets like image-box / icon-box)
+  if (styles.backgroundImage && styles.backgroundImage !== 'none') {
     const urlMatch = styles.backgroundImage.match(/url\(['"]?(.+?)['"]?\)/);
     if (urlMatch) {
       s.background_background = 'classic';
@@ -516,6 +516,7 @@ function stylesToElementorSettings(styles: ParsedStyles, widgetType: WidgetType)
       if (styles.backgroundPosition) s.background_position = styles.backgroundPosition;
     }
   }
+
 
   // Typography
   const typo = extractTypography(styles);
