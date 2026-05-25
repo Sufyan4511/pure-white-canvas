@@ -177,7 +177,12 @@ interface StyleMapResult {
   computedStyles: Map<Element, ParsedStyles>;
   // Full custom_css string per element (using Elementor's "selector" placeholder)
   customCssPerElement: Map<Element, string>;
+  // CSS to inject on the FIRST root container so Elementor renders fonts/icons:
+  //   - @import rules pulled from <link rel="stylesheet"> (Google Fonts, FontAwesome CDN, etc.)
+  //   - @font-face declarations from source <style> blocks
+  rootPrelude: string;
 }
+
 
 // Tokenise raw CSS into a flat list of top-level blocks (handles nested @rules)
 interface CssBlock {
@@ -237,25 +242,31 @@ function buildCustomCss(el: Element, blocks: CssBlock[]): string {
   const elClasses = Array.from(el.classList);
   const elId = el.id;
 
+  const STATE_RE = /:(?:hover|focus|active|focus-visible|focus-within|visited|disabled)\b/;
+
   function selectorMatchesEl(sel: string): boolean {
-    // Clean up whitespace-only descendant selectors — only match direct element selectors
-    // (we don't want ancestor rules to pollute the element's own custom_css)
     const trimmed = sel.trim();
-    // Skip rules with descendant combinators (space), child (>), sibling (+~)
-    // unless it's a pseudo-selector of a direct match
+    // 1) Direct match (no combinators, or browser-supported full match)
     const withoutPseudo = trimmed.replace(/::?[\w-]+(\([^)]*\))?/g, '');
-    if (/[\s>+~]/.test(withoutPseudo)) return false;
-    try { return el.matches(trimmed); } catch { return false; }
+    if (!/[\s>+~]/.test(withoutPseudo)) {
+      try { return el.matches(trimmed); } catch { return false; }
+    }
+    // 2) For interactive states with descendant combinators, match the rightmost compound
+    //    so that ".card .btn:hover" still applies to the .btn element.
+    if (!STATE_RE.test(trimmed)) return false;
+    const rightmost = trimmed.split(/\s*[\s>+~]\s*/).pop() || '';
+    try { return el.matches(rightmost); } catch { return false; }
   }
 
   function selectorToElementor(sel: string): string {
-    // Replace the base selector part with "selector", keep pseudo-selectors
     const trimmed = sel.trim();
-    // Extract pseudo part (e.g. ":hover", "::before", ":nth-child(2)")
-    const pseudoMatch = trimmed.match(/(:{1,2}[\w-]+(?:\([^)]*\))?)+$/);
+    // Only keep the rightmost compound's pseudo so Elementor's "selector" placeholder works
+    const rightmost = trimmed.split(/\s*[\s>+~]\s*/).pop() || trimmed;
+    const pseudoMatch = rightmost.match(/(:{1,2}[\w-]+(?:\([^)]*\))?)+$/);
     const pseudo = pseudoMatch ? pseudoMatch[0] : '';
     return `selector${pseudo}`;
   }
+
 
   // Process regular (non-@) rules first
   for (const block of blocks) {
@@ -349,6 +360,30 @@ function buildStyleMap(doc: Document): StyleMapResult {
   // Parse all CSS blocks once for custom_css building
   const allBlocks = parseCssBlocks(allRawCss);
 
+  // Collect prelude: external stylesheet @imports + @font-face + @import declarations
+  const preludeParts: string[] = [];
+  const seenImports = new Set<string>();
+  doc.querySelectorAll('link[rel="stylesheet"]').forEach(linkEl => {
+    const href = linkEl.getAttribute('href') || '';
+    if (!href || seenImports.has(href)) return;
+    seenImports.add(href);
+    preludeParts.push(`@import url("${href}");`);
+  });
+  for (const block of allBlocks) {
+    if (block.selector.startsWith('@font-face')) {
+      preludeParts.push(`${block.selector} {\n${block.body}\n}`);
+    } else if (/^@import\b/.test(block.selector)) {
+      preludeParts.push(`${block.selector};`);
+    }
+  }
+  // Auto-inject FontAwesome CDN if any element uses FA classes and we haven't already pulled it in
+  const hasFa = !!doc.querySelector('[class*="fa-"], [class*="fas "], [class*="far "], [class*="fab "]');
+  const faAlreadyImported = preludeParts.some(p => /font-?awesome/i.test(p));
+  if (hasFa && !faAlreadyImported) {
+    preludeParts.unshift('@import url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css");');
+  }
+  const rootPrelude = preludeParts.join('\n');
+
   doc.body.querySelectorAll('*').forEach(el => {
     const merged: ParsedStyles = {};
     for (const rule of rules) {
@@ -365,8 +400,9 @@ function buildStyleMap(doc: Document): StyleMapResult {
     if (css) customCssPerElement.set(el, css);
   });
 
-  return { computedStyles, customCssPerElement };
+  return { computedStyles, customCssPerElement, rootPrelude };
 }
+
 
 // --- Style → Elementor settings conversion ---
 
@@ -717,12 +753,26 @@ function findIconDescendant(el: Element, maxDepth = 3): Element | null {
   return walk(el, 0);
 }
 
-// Extract a Font Awesome icon value from an element's class attribute
-function extractFaIconValue(el: Element): string {
-  const cls = el.getAttribute('class') || '';
-  const faMatch = cls.match(/\b(fa[sr]?\s+fa-[\w-]+|fas\s+fa-[\w-]+|far\s+fa-[\w-]+|fab\s+fa-[\w-]+|fa-[\w-]+)\b/);
-  return faMatch ? faMatch[0].trim() : cls.trim();
+// Extract Elementor selected_icon { value, library } from an element's class attribute.
+function extractFaIcon(el: Element): { value: string; library: string } {
+  const cls = (el.getAttribute('class') || '').trim();
+  // Detect FA style → library
+  let library = 'fa-solid';
+  if (/\bfab\b|\bfa-brands\b/.test(cls)) library = 'fa-brands';
+  else if (/\bfar\b|\bfa-regular\b/.test(cls)) library = 'fa-regular';
+  else if (/\bfal\b|\bfa-light\b/.test(cls)) library = 'fa-light';
+  else if (/\bfas\b|\bfa-solid\b/.test(cls)) library = 'fa-solid';
+  // Find the specific icon name (fa-XYZ, excluding style modifiers)
+  const STYLE_TOKENS = new Set(['fa', 'fas', 'far', 'fab', 'fal', 'fa-solid', 'fa-regular', 'fa-brands', 'fa-light', 'fa-fw', 'fa-lg', 'fa-2x', 'fa-3x', 'fa-spin', 'fa-pulse']);
+  const nameMatch = cls.split(/\s+/).find(c => /^fa-[\w-]+$/.test(c) && !STYLE_TOKENS.has(c));
+  const stylePrefix = library === 'fa-brands' ? 'fab' : library === 'fa-regular' ? 'far' : library === 'fa-light' ? 'fal' : 'fas';
+  const value = nameMatch ? `${stylePrefix} ${nameMatch}` : cls;
+  return { value, library };
 }
+
+
+
+
 
 
 function detectLayoutDirection(el: Element, childCount: number, styles: ParsedStyles): { direction: 'row' | 'column'; columns: number } {
@@ -860,15 +910,13 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
 
   if (tag !== 'div' && hasIconClass(el)) {
     const text = el.textContent?.trim();
-    // Extract Font Awesome class if present
-    const cls = el.getAttribute('class') || '';
-    const faMatch = cls.match(/\b(fa[sr]?\s+fa-[\w-]+|fas\s+fa-[\w-]+|far\s+fa-[\w-]+|fab\s+fa-[\w-]+|fa-[\w-]+)\b/);
-    const iconValue = faMatch ? faMatch[0].trim() : cls.trim();
+    const { value: iconValue, library: iconLib } = extractFaIcon(el);
     if (text && text.length > 2) {
-      return { widget: 'icon-box', badge: tag, preview: `icon + "${text.slice(0, 40)}"`, settings: { title: text, selected_icon: { value: iconValue, library: 'fa-solid' } } };
+      return { widget: 'icon-box', badge: tag, preview: `icon + "${text.slice(0, 40)}"`, settings: { title_text: text, selected_icon: { value: iconValue, library: iconLib } } };
     }
-    return { widget: 'icon', badge: tag, preview: iconValue || 'icon', settings: { selected_icon: { value: iconValue, library: 'fa-solid' } } };
+    return { widget: 'icon', badge: tag, preview: iconValue || 'icon', settings: { selected_icon: { value: iconValue, library: iconLib } } };
   }
+
 
   if (tag === 'video') {
     const src = el.getAttribute('src') || el.querySelector('source')?.getAttribute('src') || '';
@@ -898,32 +946,33 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
     // Strip <i>/<svg> icon descendants from button text and capture as selected_icon
     const clone = el.cloneNode(true) as Element;
     const iconNode = clone.querySelector('i[class*="fa"], i[class*="icon"], svg');
-    let iconValue = '';
+    let iconInfo: { value: string; library: string } | null = null;
     if (iconNode) {
-      if (iconNode.tagName.toLowerCase() !== 'svg') iconValue = extractFaIconValue(iconNode);
+      if (iconNode.tagName.toLowerCase() !== 'svg') iconInfo = extractFaIcon(iconNode);
       iconNode.remove();
     }
     const text = clone.textContent?.trim() || fullText;
     const ss = stylesToElementorSettings(styles, 'button');
     const settings: Record<string, unknown> = { text, button_type: 'default', link: { url: href }, ...ss };
-    if (iconValue) settings.selected_icon = { value: iconValue, library: 'fa-solid' };
+    if (iconInfo) settings.selected_icon = { value: iconInfo.value, library: iconInfo.library };
     return { widget: 'button', badge: 'a', preview: `"${text.slice(0, 50)}"${href ? ` → ${href}` : ''}`, settings };
   }
 
   if (tag === 'button') {
     const clone = el.cloneNode(true) as Element;
     const iconNode = clone.querySelector('i[class*="fa"], i[class*="icon"], svg');
-    let iconValue = '';
+    let iconInfo: { value: string; library: string } | null = null;
     if (iconNode) {
-      if (iconNode.tagName.toLowerCase() !== 'svg') iconValue = extractFaIconValue(iconNode);
+      if (iconNode.tagName.toLowerCase() !== 'svg') iconInfo = extractFaIcon(iconNode);
       iconNode.remove();
     }
     const text = clone.textContent?.trim() || '';
     const ss = stylesToElementorSettings(styles, 'button');
     const settings: Record<string, unknown> = { text, button_type: 'default', ...ss };
-    if (iconValue) settings.selected_icon = { value: iconValue, library: 'fa-solid' };
+    if (iconInfo) settings.selected_icon = { value: iconInfo.value, library: iconInfo.library };
     return { widget: 'button', badge: 'button', preview: `"${text.slice(0, 50)}"`, settings };
   }
+
 
 
   if (tag === 'p') {
@@ -1040,9 +1089,11 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
         const descEl = Array.from(el.querySelectorAll('p')).find(p => p.textContent?.trim());
         const description = descEl?.textContent?.trim() || '';
         const iconTag = iconEl.tagName.toLowerCase();
+        const iconInfo = iconTag === 'svg' ? null : extractFaIcon(iconEl);
         const iconSettings: Record<string, unknown> = iconTag === 'svg'
           ? { selected_icon: { value: '', library: 'svg' }, icon_html: iconEl.outerHTML }
-          : { selected_icon: { value: extractFaIconValue(iconEl), library: 'fa-solid' } };
+          : { selected_icon: { value: iconInfo!.value, library: iconInfo!.library } };
+
         const ss = stylesToElementorSettings(styles, 'icon-box');
         return {
           widget: 'icon-box',
@@ -1163,7 +1214,7 @@ export function parseHTML(html: string): ElementNode[] {
   idCounter = 0;
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
-  const { computedStyles, customCssPerElement } = buildStyleMap(doc);
+  const { computedStyles, customCssPerElement, rootPrelude } = buildStyleMap(doc);
   const ctx: ParseContext = { computedStyles, customCssPerElement };
   const nodes: ElementNode[] = [];
 
@@ -1172,8 +1223,16 @@ export function parseHTML(html: string): ElementNode[] {
     if (node) nodes.push(node);
   }
 
+  // Inject font/icon @imports + @font-face into the first root element so the editor renders correctly
+  if (rootPrelude && nodes.length > 0) {
+    const first = nodes[0];
+    const existing = (first.settings.custom_css as string) || '';
+    first.settings.custom_css = existing ? `${rootPrelude}\n\n${existing}` : rootPrelude;
+  }
+
   return nodes;
 }
+
 
 // --- Elementor JSON generation with correct schema ---
 
