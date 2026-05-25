@@ -229,6 +229,28 @@ export default function App() {
     setAppState('downloaded');
   };
 
+  const handleCopyJson = async () => {
+    const finalNodes = applyOverridesToNodes(nodes);
+    const json = jsonOutput || buildElementorJSON(finalNodes, fileInfo?.name || 'page');
+    try {
+      await navigator.clipboard.writeText(json);
+      setJsonOutput(json);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Fallback: select via textarea
+      const ta = document.createElement('textarea');
+      ta.value = json;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch { /* noop */ }
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
+
   const handleReset = () => {
     if (fileInfo?.url) URL.revokeObjectURL(fileInfo.url);
     setFileInfo(null);
