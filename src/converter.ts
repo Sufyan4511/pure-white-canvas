@@ -992,6 +992,31 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
 
     const childElements = Array.from(el.children).filter(c => !['script', 'style', 'meta', 'link', 'br'].includes(c.tagName.toLowerCase()));
 
+    // Carousel detection (Swiper / Slick / Owl / Glide / Splide)
+    if (isCarouselContainer(el)) {
+      const images = getCarouselImages(el);
+      if (images.length >= 2) {
+        return {
+          widget: 'image-carousel',
+          badge: tag,
+          preview: `Carousel — ${images.length} slides`,
+          settings: { carousel: images.map(i => ({ url: i.url, id: '', size: '', alt: i.alt, source: 'library' })) },
+        };
+      }
+    }
+
+    // Google Maps placeholder div
+    const mapsAddr = detectMapsDiv(el);
+    if (mapsAddr) {
+      return { widget: 'google_maps', badge: tag, preview: 'Google Maps', settings: { address: mapsAddr } };
+    }
+
+    // Collapse fully-empty containers (no children, no text, no bg)
+    if (childElements.length === 0 && !(el.textContent?.trim()) && !styles.backgroundImage && !styles.backgroundColor) {
+      return { widget: 'spacer', badge: tag, preview: 'Empty container', settings: { space: dim(10) } };
+    }
+
+
     // Icon-box pattern: container with an icon (i/svg/icon-class) + meaningful text/heading.
     // Detect BEFORE image-box so icon cards aren't misclassified.
     {
