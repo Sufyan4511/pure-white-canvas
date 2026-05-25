@@ -122,7 +122,19 @@ function TreeNodeItem({ node, overrides, onOverride }: TreeNodeProps) {
   );
 }
 
+function nodeMatches(node: ElementNode, q: string, overrides: Record<string, WidgetType>): boolean {
+  if (!q) return true;
+  const widget = overrides[node.id] ?? node.widgetType;
+  const hay = `${widget} ${node.badge} ${node.preview} ${node.htmlElement}`.toLowerCase();
+  if (hay.includes(q)) return true;
+  return node.children.some(c => nodeMatches(c, q, overrides));
+}
+
 export default function ElementTree({ nodes, overrides, onOverride }: ElementTreeProps) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const filtered = q ? nodes.filter(n => nodeMatches(n, q, overrides)) : nodes;
+
   if (nodes.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-gray-400 text-sm">
@@ -133,9 +145,21 @@ export default function ElementTree({ nodes, overrides, onOverride }: ElementTre
 
   return (
     <div className="p-4">
-      {nodes.map(node => (
-        <TreeNodeItem key={node.id} node={node} overrides={overrides} onOverride={onOverride} />
-      ))}
+      <input
+        type="text"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        placeholder="Filter by widget type, tag, or text..."
+        className="w-full mb-3 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400 placeholder-gray-400"
+      />
+      {filtered.length === 0 ? (
+        <p className="text-xs text-gray-400 text-center py-4">No nodes match "{query}"</p>
+      ) : (
+        filtered.map(node => (
+          <TreeNodeItem key={node.id} node={node} overrides={overrides} onOverride={onOverride} />
+        ))
+      )}
     </div>
   );
 }
+
