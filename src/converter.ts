@@ -1017,16 +1017,25 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
     }
 
 
-    // Icon-box pattern: container with an icon (i/svg/icon-class) + meaningful text/heading.
-    // Detect BEFORE image-box so icon cards aren't misclassified.
+    // Icon-box pattern: STRICT — small card with an icon + heading/short text.
+    // Must NOT trigger for sections/headers/footers/etc. that happen to contain an icon somewhere.
     {
+      const SECTION_TAGS = new Set(['section', 'header', 'footer', 'main', 'article', 'aside', 'nav', 'body', 'html', 'form']);
       const text = (el.textContent?.trim() || '');
       const hasImgDescendant = el.querySelector('img, picture') !== null;
-      const iconEl = !hasImgDescendant && text.length > 2 && childElements.length <= 6
-        ? findIconDescendant(el, 3)
-        : null;
-      if (iconEl) {
-        const headingEl = el.querySelector('h1,h2,h3,h4,h5,h6');
+      const isCardSized =
+        !SECTION_TAGS.has(tag) &&
+        childElements.length > 0 &&
+        childElements.length <= 4 &&
+        text.length > 2 &&
+        text.length < 280 &&
+        !hasImgDescendant;
+      // Icon must be shallow (direct child or one level deep), not buried inside the section.
+      const iconEl = isCardSized ? findIconDescendant(el, 1) : null;
+      // Require a heading OR a short single text block — otherwise it's just a regular container.
+      const headingEl = iconEl ? el.querySelector('h1,h2,h3,h4,h5,h6') : null;
+      const hasShortText = iconEl && (headingEl || text.length < 120);
+      if (iconEl && hasShortText) {
         const title = headingEl?.textContent?.trim() || '';
         const descEl = Array.from(el.querySelectorAll('p')).find(p => p.textContent?.trim());
         const description = descEl?.textContent?.trim() || '';
@@ -1048,6 +1057,7 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
         };
       }
     }
+
 
     // Image-box pattern
     if (childElements.length <= 3) {
