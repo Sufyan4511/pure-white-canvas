@@ -360,6 +360,30 @@ function buildStyleMap(doc: Document): StyleMapResult {
   // Parse all CSS blocks once for custom_css building
   const allBlocks = parseCssBlocks(allRawCss);
 
+  // Collect prelude: external stylesheet @imports + @font-face + @import declarations
+  const preludeParts: string[] = [];
+  const seenImports = new Set<string>();
+  doc.querySelectorAll('link[rel="stylesheet"]').forEach(linkEl => {
+    const href = linkEl.getAttribute('href') || '';
+    if (!href || seenImports.has(href)) return;
+    seenImports.add(href);
+    preludeParts.push(`@import url("${href}");`);
+  });
+  for (const block of allBlocks) {
+    if (block.selector.startsWith('@font-face')) {
+      preludeParts.push(`${block.selector} {\n${block.body}\n}`);
+    } else if (/^@import\b/.test(block.selector)) {
+      preludeParts.push(`${block.selector};`);
+    }
+  }
+  // Auto-inject FontAwesome CDN if any element uses FA classes and we haven't already pulled it in
+  const hasFa = !!doc.querySelector('[class*="fa-"], [class*="fas "], [class*="far "], [class*="fab "]');
+  const faAlreadyImported = preludeParts.some(p => /font-?awesome/i.test(p));
+  if (hasFa && !faAlreadyImported) {
+    preludeParts.unshift('@import url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css");');
+  }
+  const rootPrelude = preludeParts.join('\n');
+
   doc.body.querySelectorAll('*').forEach(el => {
     const merged: ParsedStyles = {};
     for (const rule of rules) {
@@ -376,8 +400,9 @@ function buildStyleMap(doc: Document): StyleMapResult {
     if (css) customCssPerElement.set(el, css);
   });
 
-  return { computedStyles, customCssPerElement };
+  return { computedStyles, customCssPerElement, rootPrelude };
 }
+
 
 // --- Style → Elementor settings conversion ---
 
