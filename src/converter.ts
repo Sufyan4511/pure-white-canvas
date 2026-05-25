@@ -634,6 +634,30 @@ function hasDirectTextContent(el: Element): boolean {
   return false;
 }
 
+// Find an icon element (i/svg/span with icon class) within el — checks descendants up to a small depth
+function findIconDescendant(el: Element, maxDepth = 3): Element | null {
+  const walk = (node: Element, depth: number): Element | null => {
+    if (depth > maxDepth) return null;
+    for (const child of Array.from(node.children)) {
+      const tag = child.tagName.toLowerCase();
+      if (tag === 'svg') return child;
+      if ((tag === 'i' || tag === 'span') && hasIconClass(child) && !(child.textContent?.trim())) return child;
+      const found = walk(child, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(el, 0);
+}
+
+// Extract a Font Awesome icon value from an element's class attribute
+function extractFaIconValue(el: Element): string {
+  const cls = el.getAttribute('class') || '';
+  const faMatch = cls.match(/\b(fa[sr]?\s+fa-[\w-]+|fas\s+fa-[\w-]+|far\s+fa-[\w-]+|fab\s+fa-[\w-]+|fa-[\w-]+)\b/);
+  return faMatch ? faMatch[0].trim() : cls.trim();
+}
+
+
 function detectLayoutDirection(el: Element, childCount: number, styles: ParsedStyles): { direction: 'row' | 'column'; columns: number } {
   const cls = (el.getAttribute('class') || '').toLowerCase();
 
