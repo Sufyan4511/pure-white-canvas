@@ -876,15 +876,13 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
 
   if (tag !== 'div' && hasIconClass(el)) {
     const text = el.textContent?.trim();
-    // Extract Font Awesome class if present
-    const cls = el.getAttribute('class') || '';
-    const faMatch = cls.match(/\b(fa[sr]?\s+fa-[\w-]+|fas\s+fa-[\w-]+|far\s+fa-[\w-]+|fab\s+fa-[\w-]+|fa-[\w-]+)\b/);
-    const iconValue = faMatch ? faMatch[0].trim() : cls.trim();
+    const { value: iconValue, library: iconLib } = extractFaIcon(el);
     if (text && text.length > 2) {
-      return { widget: 'icon-box', badge: tag, preview: `icon + "${text.slice(0, 40)}"`, settings: { title: text, selected_icon: { value: iconValue, library: 'fa-solid' } } };
+      return { widget: 'icon-box', badge: tag, preview: `icon + "${text.slice(0, 40)}"`, settings: { title_text: text, selected_icon: { value: iconValue, library: iconLib } } };
     }
-    return { widget: 'icon', badge: tag, preview: iconValue || 'icon', settings: { selected_icon: { value: iconValue, library: 'fa-solid' } } };
+    return { widget: 'icon', badge: tag, preview: iconValue || 'icon', settings: { selected_icon: { value: iconValue, library: iconLib } } };
   }
+
 
   if (tag === 'video') {
     const src = el.getAttribute('src') || el.querySelector('source')?.getAttribute('src') || '';
