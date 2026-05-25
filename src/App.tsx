@@ -454,7 +454,14 @@ export default function App() {
                         <Download size={15} />
                         Download Elementor JSON
                       </button>
+                      <button
+                        onClick={handleCopyJson}
+                        className="w-full mt-2 flex items-center justify-center gap-2 border border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300 font-medium text-xs rounded-lg py-2 transition-all"
+                      >
+                        {copied ? <><Check size={12} className="text-emerald-400" /> Copied!</> : <><Copy size={12} /> Copy JSON to clipboard</>}
+                      </button>
                     </div>
+
 
                     <button
                       onClick={() => setSidebarTab('ai')}
