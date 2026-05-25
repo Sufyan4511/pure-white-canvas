@@ -162,20 +162,19 @@ export default function App() {
       let finalNodes = parsed;
       let autoFixed = 0;
 
-      // Auto-run AI if a key is saved — improves widget detection before showing the tree
-      if (aiConfig) {
-        setConvertPhase('ai');
-        try {
-          const res = await runAIAnalysis(aiConfig, fileInfo.content, parsed, supabaseUrl, supabaseAnonKey);
-          if (res.fixes.length > 0) {
-            const { nodes: patched, applied } = applyAIFixes(parsed, res.fixes);
-            finalNodes = patched;
-            autoFixed = applied;
-          }
-        } catch {
-          // AI failure is non-fatal — proceed with unpatched nodes
+      // Auto-run AI analysis (Lovable AI Gateway) to improve widget detection
+      setConvertPhase('ai');
+      try {
+        const res = await runAIAnalysis(fileInfo.content, parsed, supabaseUrl, supabaseAnonKey);
+        if (res.fixes.length > 0) {
+          const { nodes: patched, applied } = applyAIFixes(parsed, res.fixes);
+          finalNodes = patched;
+          autoFixed = applied;
         }
+      } catch {
+        // AI failure is non-fatal — proceed with unpatched nodes
       }
+
 
       setConvertPhase(null);
       const count = countElements(finalNodes);
