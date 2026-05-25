@@ -385,18 +385,19 @@ export default function App() {
                         </>
                       ) : (
                         <>
-                          {aiConfig ? <Sparkles size={15} /> : <Zap size={15} />}
-                          {aiConfig ? 'Smart Convert' : 'Convert to Elementor JSON'}
+                          <Sparkles size={15} />
+                          Smart Convert
                         </>
                       )}
                     </button>
-                    {aiConfig && appState !== 'converting' && (
+                    {appState !== 'converting' && (
                       <p className="text-[10px] text-cyan-600 text-center mt-1.5 flex items-center justify-center gap-1">
                         <Sparkles size={9} /> AI auto-analysis enabled
                       </p>
                     )}
                   </div>
                 )}
+
 
                 {/* AI fix banner */}
                 {aiFixBanner && (
