@@ -93,13 +93,6 @@ function spacing(top: string, right: string, bottom: string, left: string, unit 
   return { unit, top, right, bottom, left, isLinked };
 }
 
-function spacingLinked(val: string, unit = 'px'): Record<string, unknown> {
-  return { unit, top: val, right: val, bottom: val, left: val, isLinked: true };
-}
-
-function spacingZero(): Record<string, unknown> {
-  return spacingLinked('0');
-}
 
 // Elementor flex_gap object (correct format with column/row/isLinked)
 function flexGap(size: number, unit = 'px'): Record<string, unknown> {
