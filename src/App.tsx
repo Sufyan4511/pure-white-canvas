@@ -1,14 +1,15 @@
-import { useState, useRef, useCallback } from 'react';
-import { Upload, X, Download, RotateCcw, Zap, FileText, Eye, GitBranch, AlertCircle, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Upload, X, Download, RotateCcw, Zap, FileText, Eye, GitBranch, AlertCircle, CheckCircle2, Loader2, Sparkles, Copy, Check } from 'lucide-react';
 import { parseHTML, buildElementorJSON, countElements, type ElementNode, type WidgetType } from './converter';
 import ElementTree from './ElementTree';
 import AIPanel from './AIPanel';
-import type { AIFix, AIConfig } from './aiService';
+import type { AIFix } from './aiService';
 import { runAIAnalysis } from './aiService';
 
 type AppState = 'idle' | 'fileSelected' | 'converting' | 'converted' | 'downloaded';
 type ActiveTab = 'preview' | 'tree';
 type SidebarTab = 'workflow' | 'ai';
+
 
 interface FileInfo {
   name: string;
