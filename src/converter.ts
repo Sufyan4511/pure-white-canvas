@@ -611,6 +611,72 @@ function isGoogleMaps(src: string): boolean {
   return /maps\.google\.com|google\.com\/maps/.test(src);
 }
 
+// Extract image src handling lazy-load attrs (data-src, data-lazy-src, data-original)
+function getImgSrc(el: Element): string {
+  return (
+    el.getAttribute('src') ||
+    el.getAttribute('data-src') ||
+    el.getAttribute('data-lazy-src') ||
+    el.getAttribute('data-original') ||
+    el.getAttribute('data-bg') ||
+    ''
+  );
+}
+
+// Pick the largest URL from a srcset attribute string
+function pickFromSrcset(srcset: string): string {
+  if (!srcset) return '';
+  const candidates = srcset.split(',').map(s => {
+    const parts = s.trim().split(/\s+/);
+    const url = parts[0] || '';
+    const descriptor = parts[1] || '';
+    const widthMatch = descriptor.match(/^(\d+)w$/);
+    const densityMatch = descriptor.match(/^([\d.]+)x$/);
+    const weight = widthMatch ? parseInt(widthMatch[1]) : densityMatch ? parseFloat(densityMatch[1]) * 1000 : 0;
+    return { url, weight };
+  }).filter(c => c.url);
+  if (candidates.length === 0) return '';
+  candidates.sort((a, b) => b.weight - a.weight);
+  return candidates[0].url;
+}
+
+// Resolve best image URL from <img>, including srcset and lazy-load attrs
+function bestImageUrl(img: Element): string {
+  const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset') || '';
+  const fromSrcset = pickFromSrcset(srcset);
+  return fromSrcset || getImgSrc(img);
+}
+
+// Detect known carousel/slider wrappers (Swiper, Slick, Owl, Glide)
+function isCarouselContainer(el: Element): boolean {
+  const cls = (el.getAttribute('class') || '').toLowerCase();
+  return /\b(swiper|slick-slider|owl-carousel|glide|splide|carousel)\b/.test(cls);
+}
+
+function getCarouselImages(el: Element): Array<{ url: string; alt: string }> {
+  const slides = el.querySelectorAll('.swiper-slide img, .slick-slide img, .owl-item img, .glide__slide img, .splide__slide img, .carousel-item img, [class*="slide"] img');
+  if (slides.length >= 2) {
+    return Array.from(slides).map(img => ({ url: bestImageUrl(img), alt: img.getAttribute('alt') || '' })).filter(i => i.url);
+  }
+  return [];
+}
+
+// Detect a Google Maps-style placeholder div (iframe inside or data-address)
+function detectMapsDiv(el: Element): string | null {
+  const cls = (el.getAttribute('class') || '').toLowerCase();
+  const addr = el.getAttribute('data-address') || el.getAttribute('data-location') || '';
+  if (addr) return addr;
+  const innerIframe = el.querySelector('iframe[src*="maps.google"], iframe[src*="google.com/maps"]');
+  if (innerIframe) return innerIframe.getAttribute('src') || '';
+  if (/\b(google-?map|map-container|gmap)\b/.test(cls)) {
+    const innerAddr = el.querySelector('[data-address], [data-location]');
+    if (innerAddr) return innerAddr.getAttribute('data-address') || innerAddr.getAttribute('data-location') || '';
+  }
+  return null;
+}
+
+
+
 function hasIconClass(el: Element): boolean {
   const cls = el.className || '';
   return /fa-|fa |icon|glyphicon|material-icons/.test(cls);
