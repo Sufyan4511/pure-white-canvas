@@ -60,10 +60,11 @@ export default function App() {
   const [nodes, setNodes] = useState<ElementNode[]>([]);
   const [overrides, setOverrides] = useState<Record<string, WidgetType>>({});
   const [elementCount, setElementCount] = useState(0);
-  const [, setJsonOutput] = useState<string>('');
+  const [jsonOutput, setJsonOutput] = useState<string>('');
   const [aiFixBanner, setAiFixBanner] = useState<{ count: number; auto?: boolean } | null>(null);
   const [convertPhase, setConvertPhase] = useState<'parsing' | 'ai' | null>(null);
-  const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
