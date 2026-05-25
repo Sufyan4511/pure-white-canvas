@@ -7,11 +7,11 @@ const corsHeaders = {
 };
 
 interface RequestPayload {
-  provider: "claude" | "openai";
-  model: string;
-  apiKey: string;
   prompt: string;
+  model?: string;
 }
+
+const DEFAULT_MODEL = "google/gemini-2.5-flash";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -19,97 +19,73 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { provider, model, apiKey, prompt }: RequestPayload = await req.json();
-
-    if (!provider || !model || !apiKey || !prompt) {
+    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: provider, model, apiKey, prompt" }),
+        JSON.stringify({ error: "LOVABLE_API_KEY is not configured." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { prompt, model }: RequestPayload = await req.json();
+    if (!prompt || typeof prompt !== "string") {
+      return new Response(
+        JSON.stringify({ error: "Missing 'prompt' field." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    let content: string;
-    let tokensUsed: number | undefined;
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: model || DEFAULT_MODEL,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are an expert HTML structure analyzer and Elementor conversion engine. Respond ONLY with valid JSON. No markdown fences, no commentary outside the JSON object.",
+          },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
 
-    if (provider === "claude") {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 4096,
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        return new Response(
-          JSON.stringify({ error: `Claude API error (${res.status}): ${err}` }),
-          { status: res.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const data = await res.json() as {
-        content: Array<{ type: string; text: string }>;
-        usage?: { input_tokens: number; output_tokens: number };
-      };
-
-      content = data.content.find((c) => c.type === "text")?.text ?? "";
-      if (data.usage) tokensUsed = data.usage.input_tokens + data.usage.output_tokens;
-
-    } else if (provider === "openai") {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 4096,
-          messages: [
-            {
-              role: "system",
-              content: "You are an expert Elementor developer. Respond only with valid JSON as instructed.",
-            },
-            { role: "user", content: prompt },
-          ],
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.text();
-        return new Response(
-          JSON.stringify({ error: `OpenAI API error (${res.status}): ${err}` }),
-          { status: res.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const data = await res.json() as {
-        choices: Array<{ message: { content: string } }>;
-        usage?: { total_tokens: number };
-      };
-
-      content = data.choices[0]?.message?.content ?? "";
-      if (data.usage) tokensUsed = data.usage.total_tokens;
-
-    } else {
+    if (res.status === 429) {
       return new Response(
-        JSON.stringify({ error: "Unknown provider. Use 'claude' or 'openai'." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "AI rate limit reached. Please retry in a moment." }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+    if (res.status === 402) {
+      return new Response(
+        JSON.stringify({ error: "AI credits exhausted. Please add credits in your workspace settings." }),
+        { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (!res.ok) {
+      const err = await res.text();
+      return new Response(
+        JSON.stringify({ error: `AI gateway error (${res.status}): ${err}` }),
+        { status: res.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const data = await res.json() as {
+      choices: Array<{ message: { content: string } }>;
+      usage?: { total_tokens: number };
+    };
+
+    const content = data.choices[0]?.message?.content ?? "";
+    const tokensUsed = data.usage?.total_tokens;
 
     return new Response(
       JSON.stringify({ content, tokensUsed }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-
   } catch (err) {
     return new Response(
       JSON.stringify({ error: String(err) }),
