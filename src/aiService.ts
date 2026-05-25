@@ -71,11 +71,56 @@ function buildPrompt(htmlSnippet: string, nodes: ElementNode[]): string {
     `${'  '.repeat(n.depth)}[${n.id}] ${n.widgetType} <${n.badge}> "${n.preview}" (${n.childCount} children)`
   ).join('\n');
 
-  return `You are an expert Elementor developer. I have converted an HTML page to Elementor widget nodes. Review each node and identify any issues:
+  return `You are an expert HTML structure analyzer and Elementor (WordPress page builder) conversion engine.
 
-1. Wrong widget type detection (e.g., a button detected as container, SVG detected wrong, icons missing)
-2. Missing or incorrect settings (e.g., icon SVG should use 'html' widget with the raw SVG in settings.html)
-3. Elements that would render incorrectly in Elementor
+Analyze the raw HTML + pre-parsed DOM tree and return corrected widget classifications and structural improvements.
+
+GOAL: Improve accuracy of HTML -> Elementor widget mapping by correcting wrong classifications, improving layout grouping, ensuring proper widget selection, and fixing icon-related structures.
+
+VALID WIDGET TYPES (use ONLY these):
+heading, text-editor, image, button, video, icon, icon-box, image-box, divider, spacer, nav-menu, image-carousel, google_maps, form, html, container
+
+CRITICAL RULES:
+
+1. ICON LOGIC (HIGHEST PRIORITY)
+   A. ICON + TEXT COMBINATION: If a block contains an icon (<i>, <svg>, font-awesome, material icons) AND a title/heading/text in the same logical block (same parent or grouped UI block), classify the PARENT as "icon-box" (NOT separate icon + heading + text widgets). Mark the inner icon/heading/text children as merged into the parent icon-box.
+      Example:
+        <div class="feature"><i class="fa fa-star"></i><h3>Premium</h3><p>Best</p></div>
+        -> parent = icon-box
+   B. ICON ONLY: If only an icon exists with no meaningful text in the block, classify as "icon".
+   C. EDGE CASES:
+      - Icon inside a <button> -> stays part of "button"
+      - Icon inside a nav item -> part of "nav-menu"
+      - Decorative-only icons -> ignore unless semantically important
+   D. Raw SVG icons not captured should use "html" widget with the SVG in settingsPatch.html.
+
+2. LAYOUT GROUPING
+   - heading + paragraph in same block -> same container
+   - icon + title + text -> icon-box (rule 1A)
+   - repeated cards -> grid/row container
+
+3. TEXT HANDLING
+   - Do NOT split inline text. <p>Hello <strong>world</strong></p> stays a SINGLE "text-editor" with rich text preserved.
+
+4. IMAGES
+   - <img>, background-image, lazy-loaded (data-src) all count
+   - single image -> "image"
+   - gallery / repeated images -> "image-carousel"
+   - image + text card -> "image-box"
+
+5. NAV MENU (STRICT): Only classify as "nav-menu" if <nav> exists OR there is a structured list of 4+ links.
+
+6. FORM (STRICT): Only classify as "form" if a real <form> tag exists. Do NOT guess forms from divs.
+
+7. BUTTONS: CTA anchor tags or styled clickable links -> "button".
+
+QUALITY RULES:
+- Prefer structural accuracy over guesswork.
+- Use context (siblings, parent, children).
+- Do NOT over-split widgets.
+- Do NOT hallucinate missing elements.
+- If uncertain, choose the safer generic type ("text-editor" or "container").
+- ALWAYS prioritize the icon-box rule when icon + text coexist.
 
 HTML snippet (first 3000 chars):
 \`\`\`html
@@ -87,15 +132,15 @@ Detected element tree:
 ${tree}
 \`\`\`
 
-Respond ONLY with a JSON object in this exact format (no markdown fences, no explanation outside the JSON):
+Respond ONLY with a JSON object in this EXACT format (no markdown fences, no commentary outside JSON):
 {
   "summary": "brief plain-English summary of what was fixed",
   "fixes": [
     {
       "id": "el_X_xxxxx",
       "field": "widgetType",
-      "widgetType": "button",
-      "reason": "This is a CTA anchor tag, should be button widget"
+      "widgetType": "icon-box",
+      "reason": "Icon + heading + paragraph in same block -> icon-box"
     },
     {
       "id": "el_Y_yyyyy",
@@ -106,10 +151,9 @@ Respond ONLY with a JSON object in this exact format (no markdown fences, no exp
   ]
 }
 
-Valid widgetType values: heading, text-editor, image, button, video, icon, icon-box, image-box, divider, spacer, nav-menu, image-carousel, google_maps, form, html, container
-
 Only include fixes where you are confident. If nothing needs fixing, return an empty fixes array.`;
 }
+
 
 export async function testAIConnection(
   config: AIConfig,
