@@ -883,11 +883,11 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
   }
 
   if (tag === 'a') {
-    const text = (el.textContent?.trim() || '');
     const href = el.getAttribute('href') || '';
     const innerImg = el.querySelector('img');
-    if (innerImg && !text.replace(innerImg.getAttribute('alt') || '', '').trim()) {
-      const src = innerImg.getAttribute('src') || '';
+    const fullText = (el.textContent?.trim() || '');
+    if (innerImg && !fullText.replace(innerImg.getAttribute('alt') || '', '').trim()) {
+      const src = bestImageUrl(innerImg);
       return {
         widget: 'image',
         badge: 'a>img',
@@ -895,20 +895,36 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
         settings: { image: { url: src, id: '', size: '', alt: innerImg.getAttribute('alt') || '', source: 'library' }, link: { url: href } },
       };
     }
+    // Strip <i>/<svg> icon descendants from button text and capture as selected_icon
+    const clone = el.cloneNode(true) as Element;
+    const iconNode = clone.querySelector('i[class*="fa"], i[class*="icon"], svg');
+    let iconValue = '';
+    if (iconNode) {
+      if (iconNode.tagName.toLowerCase() !== 'svg') iconValue = extractFaIconValue(iconNode);
+      iconNode.remove();
+    }
+    const text = clone.textContent?.trim() || fullText;
     const ss = stylesToElementorSettings(styles, 'button');
-    return {
-      widget: 'button',
-      badge: 'a',
-      preview: `"${text.slice(0, 50)}"${href ? ` → ${href}` : ''}`,
-      settings: { text, button_type: 'default', link: { url: href }, ...ss },
-    };
+    const settings: Record<string, unknown> = { text, button_type: 'default', link: { url: href }, ...ss };
+    if (iconValue) settings.selected_icon = { value: iconValue, library: 'fa-solid' };
+    return { widget: 'button', badge: 'a', preview: `"${text.slice(0, 50)}"${href ? ` → ${href}` : ''}`, settings };
   }
 
   if (tag === 'button') {
-    const text = el.textContent?.trim() || '';
+    const clone = el.cloneNode(true) as Element;
+    const iconNode = clone.querySelector('i[class*="fa"], i[class*="icon"], svg');
+    let iconValue = '';
+    if (iconNode) {
+      if (iconNode.tagName.toLowerCase() !== 'svg') iconValue = extractFaIconValue(iconNode);
+      iconNode.remove();
+    }
+    const text = clone.textContent?.trim() || '';
     const ss = stylesToElementorSettings(styles, 'button');
-    return { widget: 'button', badge: 'button', preview: `"${text.slice(0, 50)}"`, settings: { text, button_type: 'default', ...ss } };
+    const settings: Record<string, unknown> = { text, button_type: 'default', ...ss };
+    if (iconValue) settings.selected_icon = { value: iconValue, library: 'fa-solid' };
+    return { widget: 'button', badge: 'button', preview: `"${text.slice(0, 50)}"`, settings };
   }
+
 
   if (tag === 'p') {
     const ss = stylesToElementorSettings(styles, 'text-editor');
