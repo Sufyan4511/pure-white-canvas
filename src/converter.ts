@@ -237,25 +237,31 @@ function buildCustomCss(el: Element, blocks: CssBlock[]): string {
   const elClasses = Array.from(el.classList);
   const elId = el.id;
 
+  const STATE_RE = /:(?:hover|focus|active|focus-visible|focus-within|visited|disabled)\b/;
+
   function selectorMatchesEl(sel: string): boolean {
-    // Clean up whitespace-only descendant selectors — only match direct element selectors
-    // (we don't want ancestor rules to pollute the element's own custom_css)
     const trimmed = sel.trim();
-    // Skip rules with descendant combinators (space), child (>), sibling (+~)
-    // unless it's a pseudo-selector of a direct match
+    // 1) Direct match (no combinators, or browser-supported full match)
     const withoutPseudo = trimmed.replace(/::?[\w-]+(\([^)]*\))?/g, '');
-    if (/[\s>+~]/.test(withoutPseudo)) return false;
-    try { return el.matches(trimmed); } catch { return false; }
+    if (!/[\s>+~]/.test(withoutPseudo)) {
+      try { return el.matches(trimmed); } catch { return false; }
+    }
+    // 2) For interactive states with descendant combinators, match the rightmost compound
+    //    so that ".card .btn:hover" still applies to the .btn element.
+    if (!STATE_RE.test(trimmed)) return false;
+    const rightmost = trimmed.split(/\s*[\s>+~]\s*/).pop() || '';
+    try { return el.matches(rightmost); } catch { return false; }
   }
 
   function selectorToElementor(sel: string): string {
-    // Replace the base selector part with "selector", keep pseudo-selectors
     const trimmed = sel.trim();
-    // Extract pseudo part (e.g. ":hover", "::before", ":nth-child(2)")
-    const pseudoMatch = trimmed.match(/(:{1,2}[\w-]+(?:\([^)]*\))?)+$/);
+    // Only keep the rightmost compound's pseudo so Elementor's "selector" placeholder works
+    const rightmost = trimmed.split(/\s*[\s>+~]\s*/).pop() || trimmed;
+    const pseudoMatch = rightmost.match(/(:{1,2}[\w-]+(?:\([^)]*\))?)+$/);
     const pseudo = pseudoMatch ? pseudoMatch[0] : '';
     return `selector${pseudo}`;
   }
+
 
   // Process regular (non-@) rules first
   for (const block of blocks) {
