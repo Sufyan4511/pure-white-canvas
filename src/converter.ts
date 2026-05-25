@@ -177,7 +177,12 @@ interface StyleMapResult {
   computedStyles: Map<Element, ParsedStyles>;
   // Full custom_css string per element (using Elementor's "selector" placeholder)
   customCssPerElement: Map<Element, string>;
+  // CSS to inject on the FIRST root container so Elementor renders fonts/icons:
+  //   - @import rules pulled from <link rel="stylesheet"> (Google Fonts, FontAwesome CDN, etc.)
+  //   - @font-face declarations from source <style> blocks
+  rootPrelude: string;
 }
+
 
 // Tokenise raw CSS into a flat list of top-level blocks (handles nested @rules)
 interface CssBlock {
