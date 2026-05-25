@@ -1,14 +1,15 @@
-import { useState, useRef, useCallback } from 'react';
-import { Upload, X, Download, RotateCcw, Zap, FileText, Eye, GitBranch, AlertCircle, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Upload, X, Download, RotateCcw, Zap, FileText, Eye, GitBranch, AlertCircle, CheckCircle2, Loader2, Sparkles, Copy, Check } from 'lucide-react';
 import { parseHTML, buildElementorJSON, countElements, type ElementNode, type WidgetType } from './converter';
 import ElementTree from './ElementTree';
 import AIPanel from './AIPanel';
-import type { AIFix, AIConfig } from './aiService';
+import type { AIFix } from './aiService';
 import { runAIAnalysis } from './aiService';
 
 type AppState = 'idle' | 'fileSelected' | 'converting' | 'converted' | 'downloaded';
 type ActiveTab = 'preview' | 'tree';
 type SidebarTab = 'workflow' | 'ai';
+
 
 interface FileInfo {
   name: string;
@@ -59,14 +60,27 @@ export default function App() {
   const [nodes, setNodes] = useState<ElementNode[]>([]);
   const [overrides, setOverrides] = useState<Record<string, WidgetType>>({});
   const [elementCount, setElementCount] = useState(0);
-  const [, setJsonOutput] = useState<string>('');
+  const [jsonOutput, setJsonOutput] = useState<string>('');
   const [aiFixBanner, setAiFixBanner] = useState<{ count: number; auto?: boolean } | null>(null);
   const [convertPhase, setConvertPhase] = useState<'parsing' | 'ai' | null>(null);
-  const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+  // Persist overrides across reloads
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('converwe_overrides');
+      if (raw) setOverrides(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('converwe_overrides', JSON.stringify(overrides)); } catch { /* ignore */ }
+  }, [overrides]);
+
 
   const loadFile = useCallback((file: File) => {
     setUploadError(null);
@@ -148,20 +162,19 @@ export default function App() {
       let finalNodes = parsed;
       let autoFixed = 0;
 
-      // Auto-run AI if a key is saved — improves widget detection before showing the tree
-      if (aiConfig) {
-        setConvertPhase('ai');
-        try {
-          const res = await runAIAnalysis(aiConfig, fileInfo.content, parsed, supabaseUrl, supabaseAnonKey);
-          if (res.fixes.length > 0) {
-            const { nodes: patched, applied } = applyAIFixes(parsed, res.fixes);
-            finalNodes = patched;
-            autoFixed = applied;
-          }
-        } catch {
-          // AI failure is non-fatal — proceed with unpatched nodes
+      // Auto-run AI analysis (Lovable AI Gateway) to improve widget detection
+      setConvertPhase('ai');
+      try {
+        const res = await runAIAnalysis(fileInfo.content, parsed, supabaseUrl, supabaseAnonKey);
+        if (res.fixes.length > 0) {
+          const { nodes: patched, applied } = applyAIFixes(parsed, res.fixes);
+          finalNodes = patched;
+          autoFixed = applied;
         }
+      } catch {
+        // AI failure is non-fatal — proceed with unpatched nodes
       }
+
 
       setConvertPhase(null);
       const count = countElements(finalNodes);
@@ -215,6 +228,28 @@ export default function App() {
     setJsonOutput(json);
     setAppState('downloaded');
   };
+
+  const handleCopyJson = async () => {
+    const finalNodes = applyOverridesToNodes(nodes);
+    const json = jsonOutput || buildElementorJSON(finalNodes, fileInfo?.name || 'page');
+    try {
+      await navigator.clipboard.writeText(json);
+      setJsonOutput(json);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Fallback: select via textarea
+      const ta = document.createElement('textarea');
+      ta.value = json;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch { /* noop */ }
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
 
   const handleReset = () => {
     if (fileInfo?.url) URL.revokeObjectURL(fileInfo.url);
@@ -372,18 +407,19 @@ export default function App() {
                         </>
                       ) : (
                         <>
-                          {aiConfig ? <Sparkles size={15} /> : <Zap size={15} />}
-                          {aiConfig ? 'Smart Convert' : 'Convert to Elementor JSON'}
+                          <Sparkles size={15} />
+                          Smart Convert
                         </>
                       )}
                     </button>
-                    {aiConfig && appState !== 'converting' && (
+                    {appState !== 'converting' && (
                       <p className="text-[10px] text-cyan-600 text-center mt-1.5 flex items-center justify-center gap-1">
                         <Sparkles size={9} /> AI auto-analysis enabled
                       </p>
                     )}
                   </div>
                 )}
+
 
                 {/* AI fix banner */}
                 {aiFixBanner && (
@@ -418,7 +454,14 @@ export default function App() {
                         <Download size={15} />
                         Download Elementor JSON
                       </button>
+                      <button
+                        onClick={handleCopyJson}
+                        className="w-full mt-2 flex items-center justify-center gap-2 border border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300 font-medium text-xs rounded-lg py-2 transition-all"
+                      >
+                        {copied ? <><Check size={12} className="text-emerald-400" /> Copied!</> : <><Copy size={12} /> Copy JSON to clipboard</>}
+                      </button>
                     </div>
+
 
                     <button
                       onClick={() => setSidebarTab('ai')}
@@ -475,9 +518,9 @@ export default function App() {
                   nodes={nodes}
                   htmlContent={fileInfo?.content ?? ''}
                   onApplyFixes={handleApplyAIFixes}
-                  onConfigChange={setAiConfig}
                   disabled={!hasConverted}
                 />
+
               </div>
             )}
           </div>

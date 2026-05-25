@@ -506,8 +506,8 @@ function stylesToElementorSettings(styles: ParsedStyles, widgetType: WidgetType)
     }
   }
 
-  // Background image (containers only)
-  if (!isWidget && styles.backgroundImage && styles.backgroundImage !== 'none') {
+  // Background image (containers AND widgets like image-box / icon-box)
+  if (styles.backgroundImage && styles.backgroundImage !== 'none') {
     const urlMatch = styles.backgroundImage.match(/url\(['"]?(.+?)['"]?\)/);
     if (urlMatch) {
       s.background_background = 'classic';
@@ -516,6 +516,7 @@ function stylesToElementorSettings(styles: ParsedStyles, widgetType: WidgetType)
       if (styles.backgroundPosition) s.background_position = styles.backgroundPosition;
     }
   }
+
 
   // Typography
   const typo = extractTypography(styles);
@@ -609,6 +610,72 @@ function isYoutubeOrVimeo(src: string): boolean {
 function isGoogleMaps(src: string): boolean {
   return /maps\.google\.com|google\.com\/maps/.test(src);
 }
+
+// Extract image src handling lazy-load attrs (data-src, data-lazy-src, data-original)
+function getImgSrc(el: Element): string {
+  return (
+    el.getAttribute('src') ||
+    el.getAttribute('data-src') ||
+    el.getAttribute('data-lazy-src') ||
+    el.getAttribute('data-original') ||
+    el.getAttribute('data-bg') ||
+    ''
+  );
+}
+
+// Pick the largest URL from a srcset attribute string
+function pickFromSrcset(srcset: string): string {
+  if (!srcset) return '';
+  const candidates = srcset.split(',').map(s => {
+    const parts = s.trim().split(/\s+/);
+    const url = parts[0] || '';
+    const descriptor = parts[1] || '';
+    const widthMatch = descriptor.match(/^(\d+)w$/);
+    const densityMatch = descriptor.match(/^([\d.]+)x$/);
+    const weight = widthMatch ? parseInt(widthMatch[1]) : densityMatch ? parseFloat(densityMatch[1]) * 1000 : 0;
+    return { url, weight };
+  }).filter(c => c.url);
+  if (candidates.length === 0) return '';
+  candidates.sort((a, b) => b.weight - a.weight);
+  return candidates[0].url;
+}
+
+// Resolve best image URL from <img>, including srcset and lazy-load attrs
+function bestImageUrl(img: Element): string {
+  const srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset') || '';
+  const fromSrcset = pickFromSrcset(srcset);
+  return fromSrcset || getImgSrc(img);
+}
+
+// Detect known carousel/slider wrappers (Swiper, Slick, Owl, Glide)
+function isCarouselContainer(el: Element): boolean {
+  const cls = (el.getAttribute('class') || '').toLowerCase();
+  return /\b(swiper|slick-slider|owl-carousel|glide|splide|carousel)\b/.test(cls);
+}
+
+function getCarouselImages(el: Element): Array<{ url: string; alt: string }> {
+  const slides = el.querySelectorAll('.swiper-slide img, .slick-slide img, .owl-item img, .glide__slide img, .splide__slide img, .carousel-item img, [class*="slide"] img');
+  if (slides.length >= 2) {
+    return Array.from(slides).map(img => ({ url: bestImageUrl(img), alt: img.getAttribute('alt') || '' })).filter(i => i.url);
+  }
+  return [];
+}
+
+// Detect a Google Maps-style placeholder div (iframe inside or data-address)
+function detectMapsDiv(el: Element): string | null {
+  const cls = (el.getAttribute('class') || '').toLowerCase();
+  const addr = el.getAttribute('data-address') || el.getAttribute('data-location') || '';
+  if (addr) return addr;
+  const innerIframe = el.querySelector('iframe[src*="maps.google"], iframe[src*="google.com/maps"]');
+  if (innerIframe) return innerIframe.getAttribute('src') || '';
+  if (/\b(google-?map|map-container|gmap)\b/.test(cls)) {
+    const innerAddr = el.querySelector('[data-address], [data-location]');
+    if (innerAddr) return innerAddr.getAttribute('data-address') || innerAddr.getAttribute('data-location') || '';
+  }
+  return null;
+}
+
+
 
 function hasIconClass(el: Element): boolean {
   const cls = el.className || '';
@@ -729,7 +796,7 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
   }
 
   if (tag === 'img') {
-    const src = el.getAttribute('src') || '';
+    const src = bestImageUrl(el);
     const alt = (el as HTMLImageElement).alt || '';
     const ss = stylesToElementorSettings(styles, 'image');
     return {
@@ -741,8 +808,20 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
   }
 
   if (tag === 'picture') {
+    // Prefer largest <source srcset>, fall back to <img>
+    const sources = Array.from(el.querySelectorAll('source'));
+    let src = '';
+    let bestWeight = -1;
+    for (const source of sources) {
+      const url = pickFromSrcset(source.getAttribute('srcset') || '');
+      if (url) {
+        // crude weight: pickFromSrcset already returned largest, so just take last source's pick
+        const w = (source.getAttribute('srcset') || '').length;
+        if (w > bestWeight) { src = url; bestWeight = w; }
+      }
+    }
     const img = el.querySelector('img');
-    const src = img?.getAttribute('src') || '';
+    if (!src && img) src = bestImageUrl(img);
     const alt = img?.getAttribute('alt') || '';
     return {
       widget: 'image',
@@ -751,6 +830,7 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
       settings: { image: { url: src, id: '', size: '', alt, source: 'library' } },
     };
   }
+
 
   if (tag === 'svg') {
     // Inline SVG — serialize to HTML widget so it renders exactly as-is in Elementor
@@ -803,11 +883,11 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
   }
 
   if (tag === 'a') {
-    const text = (el.textContent?.trim() || '');
     const href = el.getAttribute('href') || '';
     const innerImg = el.querySelector('img');
-    if (innerImg && !text.replace(innerImg.getAttribute('alt') || '', '').trim()) {
-      const src = innerImg.getAttribute('src') || '';
+    const fullText = (el.textContent?.trim() || '');
+    if (innerImg && !fullText.replace(innerImg.getAttribute('alt') || '', '').trim()) {
+      const src = bestImageUrl(innerImg);
       return {
         widget: 'image',
         badge: 'a>img',
@@ -815,20 +895,36 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
         settings: { image: { url: src, id: '', size: '', alt: innerImg.getAttribute('alt') || '', source: 'library' }, link: { url: href } },
       };
     }
+    // Strip <i>/<svg> icon descendants from button text and capture as selected_icon
+    const clone = el.cloneNode(true) as Element;
+    const iconNode = clone.querySelector('i[class*="fa"], i[class*="icon"], svg');
+    let iconValue = '';
+    if (iconNode) {
+      if (iconNode.tagName.toLowerCase() !== 'svg') iconValue = extractFaIconValue(iconNode);
+      iconNode.remove();
+    }
+    const text = clone.textContent?.trim() || fullText;
     const ss = stylesToElementorSettings(styles, 'button');
-    return {
-      widget: 'button',
-      badge: 'a',
-      preview: `"${text.slice(0, 50)}"${href ? ` → ${href}` : ''}`,
-      settings: { text, button_type: 'default', link: { url: href }, ...ss },
-    };
+    const settings: Record<string, unknown> = { text, button_type: 'default', link: { url: href }, ...ss };
+    if (iconValue) settings.selected_icon = { value: iconValue, library: 'fa-solid' };
+    return { widget: 'button', badge: 'a', preview: `"${text.slice(0, 50)}"${href ? ` → ${href}` : ''}`, settings };
   }
 
   if (tag === 'button') {
-    const text = el.textContent?.trim() || '';
+    const clone = el.cloneNode(true) as Element;
+    const iconNode = clone.querySelector('i[class*="fa"], i[class*="icon"], svg');
+    let iconValue = '';
+    if (iconNode) {
+      if (iconNode.tagName.toLowerCase() !== 'svg') iconValue = extractFaIconValue(iconNode);
+      iconNode.remove();
+    }
+    const text = clone.textContent?.trim() || '';
     const ss = stylesToElementorSettings(styles, 'button');
-    return { widget: 'button', badge: 'button', preview: `"${text.slice(0, 50)}"`, settings: { text, button_type: 'default', ...ss } };
+    const settings: Record<string, unknown> = { text, button_type: 'default', ...ss };
+    if (iconValue) settings.selected_icon = { value: iconValue, library: 'fa-solid' };
+    return { widget: 'button', badge: 'button', preview: `"${text.slice(0, 50)}"`, settings };
   }
+
 
   if (tag === 'p') {
     const ss = stylesToElementorSettings(styles, 'text-editor');
@@ -895,6 +991,31 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
     }
 
     const childElements = Array.from(el.children).filter(c => !['script', 'style', 'meta', 'link', 'br'].includes(c.tagName.toLowerCase()));
+
+    // Carousel detection (Swiper / Slick / Owl / Glide / Splide)
+    if (isCarouselContainer(el)) {
+      const images = getCarouselImages(el);
+      if (images.length >= 2) {
+        return {
+          widget: 'image-carousel',
+          badge: tag,
+          preview: `Carousel — ${images.length} slides`,
+          settings: { carousel: images.map(i => ({ url: i.url, id: '', size: '', alt: i.alt, source: 'library' })) },
+        };
+      }
+    }
+
+    // Google Maps placeholder div
+    const mapsAddr = detectMapsDiv(el);
+    if (mapsAddr) {
+      return { widget: 'google_maps', badge: tag, preview: 'Google Maps', settings: { address: mapsAddr } };
+    }
+
+    // Collapse fully-empty containers (no children, no text, no bg)
+    if (childElements.length === 0 && !(el.textContent?.trim()) && !styles.backgroundImage && !styles.backgroundColor) {
+      return { widget: 'spacer', badge: tag, preview: 'Empty container', settings: { space: dim(10) } };
+    }
+
 
     // Icon-box pattern: container with an icon (i/svg/icon-class) + meaningful text/heading.
     // Detect BEFORE image-box so icon cards aren't misclassified.
