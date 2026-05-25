@@ -734,10 +734,8 @@ function extractFaIcon(el: Element): { value: string; library: string } {
   return { value, library };
 }
 
-// Back-compat shim used elsewhere (returns just the value string)
-function extractFaIconValue(el: Element): string {
-  return extractFaIcon(el).value;
-}
+
+
 
 
 
