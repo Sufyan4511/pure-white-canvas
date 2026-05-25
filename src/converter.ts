@@ -896,6 +896,38 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
 
     const childElements = Array.from(el.children).filter(c => !['script', 'style', 'meta', 'link', 'br'].includes(c.tagName.toLowerCase()));
 
+    // Icon-box pattern: container with an icon (i/svg/icon-class) + meaningful text/heading.
+    // Detect BEFORE image-box so icon cards aren't misclassified.
+    {
+      const text = (el.textContent?.trim() || '');
+      const hasImgDescendant = el.querySelector('img, picture') !== null;
+      const iconEl = !hasImgDescendant && text.length > 2 && childElements.length <= 6
+        ? findIconDescendant(el, 3)
+        : null;
+      if (iconEl) {
+        const headingEl = el.querySelector('h1,h2,h3,h4,h5,h6');
+        const title = headingEl?.textContent?.trim() || '';
+        const descEl = Array.from(el.querySelectorAll('p')).find(p => p.textContent?.trim());
+        const description = descEl?.textContent?.trim() || '';
+        const iconTag = iconEl.tagName.toLowerCase();
+        const iconSettings: Record<string, unknown> = iconTag === 'svg'
+          ? { selected_icon: { value: '', library: 'svg' }, icon_html: iconEl.outerHTML }
+          : { selected_icon: { value: extractFaIconValue(iconEl), library: 'fa-solid' } };
+        const ss = stylesToElementorSettings(styles, 'icon-box');
+        return {
+          widget: 'icon-box',
+          badge: tag,
+          preview: `icon + "${(title || text).slice(0, 40)}"`,
+          settings: {
+            title_text: title || text.slice(0, 60),
+            description_text: description,
+            ...iconSettings,
+            ...ss,
+          },
+        };
+      }
+    }
+
     // Image-box pattern
     if (childElements.length <= 3) {
       const childImgs = el.querySelectorAll(':scope > img, :scope > picture > img');
@@ -913,6 +945,7 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
     }
 
     const { direction, columns } = detectLayoutDirection(el, childElements.length, styles);
+
     const badge = direction === 'row' ? `${columns}-col` : 'stack';
     const preview = tag === 'header' ? 'Header section' : tag === 'footer' ? 'Footer section' : tag === 'section' ? 'Section' : direction === 'row' ? `${columns}-column layout` : 'Container';
     const ss = stylesToElementorSettings(styles, 'container');
