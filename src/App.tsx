@@ -489,9 +489,9 @@ export default function App() {
                   nodes={nodes}
                   htmlContent={fileInfo?.content ?? ''}
                   onApplyFixes={handleApplyAIFixes}
-                  onConfigChange={setAiConfig}
                   disabled={!hasConverted}
                 />
+
               </div>
             )}
           </div>
