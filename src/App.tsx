@@ -159,24 +159,11 @@ export default function App() {
       const parsed = parseHTML(fileInfo.content);
       if (parsed.length === 0) throw new Error('No parseable elements found.');
 
-      let finalNodes = parsed;
-      let autoFixed = 0;
-
-      // Auto-run AI analysis (Lovable AI Gateway) to improve widget detection
-      setConvertPhase('ai');
-      try {
-        const res = await runAIAnalysis(fileInfo.content, parsed, supabaseUrl, supabaseAnonKey);
-        if (res.fixes.length > 0) {
-          const { nodes: patched, applied } = applyAIFixes(parsed, res.fixes);
-          finalNodes = patched;
-          autoFixed = applied;
-        }
-      } catch {
-        // AI failure is non-fatal — proceed with unpatched nodes
-      }
-
+      const finalNodes = parsed;
+      const autoFixed = 0;
 
       setConvertPhase(null);
+
       const count = countElements(finalNodes);
       const json = buildElementorJSON(finalNodes, fileInfo.name);
       setNodes(finalNodes);
