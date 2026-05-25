@@ -796,7 +796,7 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
   }
 
   if (tag === 'img') {
-    const src = el.getAttribute('src') || '';
+    const src = bestImageUrl(el);
     const alt = (el as HTMLImageElement).alt || '';
     const ss = stylesToElementorSettings(styles, 'image');
     return {
@@ -808,8 +808,20 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
   }
 
   if (tag === 'picture') {
+    // Prefer largest <source srcset>, fall back to <img>
+    const sources = Array.from(el.querySelectorAll('source'));
+    let src = '';
+    let bestWeight = -1;
+    for (const source of sources) {
+      const url = pickFromSrcset(source.getAttribute('srcset') || '');
+      if (url) {
+        // crude weight: pickFromSrcset already returned largest, so just take last source's pick
+        const w = (source.getAttribute('srcset') || '').length;
+        if (w > bestWeight) { src = url; bestWeight = w; }
+      }
+    }
     const img = el.querySelector('img');
-    const src = img?.getAttribute('src') || '';
+    if (!src && img) src = bestImageUrl(img);
     const alt = img?.getAttribute('alt') || '';
     return {
       widget: 'image',
@@ -818,6 +830,7 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
       settings: { image: { url: src, id: '', size: '', alt, source: 'library' } },
     };
   }
+
 
   if (tag === 'svg') {
     // Inline SVG — serialize to HTML widget so it renders exactly as-is in Elementor
