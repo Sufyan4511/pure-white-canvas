@@ -4,7 +4,7 @@ import { parseHTML, buildElementorJSON, countElements, type ElementNode, type Wi
 import ElementTree from './ElementTree';
 import AIPanel from './AIPanel';
 import type { AIFix } from './aiService';
-import { runAIAnalysis } from './aiService';
+
 
 type AppState = 'idle' | 'fileSelected' | 'converting' | 'converted' | 'downloaded';
 type ActiveTab = 'preview' | 'tree';
