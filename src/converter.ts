@@ -634,6 +634,30 @@ function hasDirectTextContent(el: Element): boolean {
   return false;
 }
 
+// Find an icon element (i/svg/span with icon class) within el — checks descendants up to a small depth
+function findIconDescendant(el: Element, maxDepth = 3): Element | null {
+  const walk = (node: Element, depth: number): Element | null => {
+    if (depth > maxDepth) return null;
+    for (const child of Array.from(node.children)) {
+      const tag = child.tagName.toLowerCase();
+      if (tag === 'svg') return child;
+      if ((tag === 'i' || tag === 'span') && hasIconClass(child) && !(child.textContent?.trim())) return child;
+      const found = walk(child, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(el, 0);
+}
+
+// Extract a Font Awesome icon value from an element's class attribute
+function extractFaIconValue(el: Element): string {
+  const cls = el.getAttribute('class') || '';
+  const faMatch = cls.match(/\b(fa[sr]?\s+fa-[\w-]+|fas\s+fa-[\w-]+|far\s+fa-[\w-]+|fab\s+fa-[\w-]+|fa-[\w-]+)\b/);
+  return faMatch ? faMatch[0].trim() : cls.trim();
+}
+
+
 function detectLayoutDirection(el: Element, childCount: number, styles: ParsedStyles): { direction: 'row' | 'column'; columns: number } {
   const cls = (el.getAttribute('class') || '').toLowerCase();
 
@@ -846,14 +870,16 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
       });
       return { widget: 'image-carousel', badge: tag, preview: `${items.length} images`, settings: { carousel: images } };
     }
-    const hasLinks = items.some(li => li.querySelector('a'));
-    if (hasLinks) {
-      const links = items.map(li => {
+    const linkItems = items.filter(li => li.querySelector('a'));
+    // Strict nav-menu: require 4+ link items
+    if (linkItems.length >= 4) {
+      const links = linkItems.map(li => {
         const a = li.querySelector('a');
         return { text: a?.textContent?.trim() || li.textContent?.trim() || '', url: a?.getAttribute('href') || '' };
       });
-      return { widget: 'nav-menu', badge: tag, preview: `${items.length} nav items`, settings: { menu_items: links } };
+      return { widget: 'nav-menu', badge: tag, preview: `${links.length} nav items`, settings: { menu_items: links } };
     }
+
     const ss = stylesToElementorSettings(styles, 'text-editor');
     return { widget: 'text-editor', badge: tag, preview: `List — ${items.length} items`, settings: { editor: el.outerHTML, ...ss } };
   }
@@ -869,6 +895,38 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
     }
 
     const childElements = Array.from(el.children).filter(c => !['script', 'style', 'meta', 'link', 'br'].includes(c.tagName.toLowerCase()));
+
+    // Icon-box pattern: container with an icon (i/svg/icon-class) + meaningful text/heading.
+    // Detect BEFORE image-box so icon cards aren't misclassified.
+    {
+      const text = (el.textContent?.trim() || '');
+      const hasImgDescendant = el.querySelector('img, picture') !== null;
+      const iconEl = !hasImgDescendant && text.length > 2 && childElements.length <= 6
+        ? findIconDescendant(el, 3)
+        : null;
+      if (iconEl) {
+        const headingEl = el.querySelector('h1,h2,h3,h4,h5,h6');
+        const title = headingEl?.textContent?.trim() || '';
+        const descEl = Array.from(el.querySelectorAll('p')).find(p => p.textContent?.trim());
+        const description = descEl?.textContent?.trim() || '';
+        const iconTag = iconEl.tagName.toLowerCase();
+        const iconSettings: Record<string, unknown> = iconTag === 'svg'
+          ? { selected_icon: { value: '', library: 'svg' }, icon_html: iconEl.outerHTML }
+          : { selected_icon: { value: extractFaIconValue(iconEl), library: 'fa-solid' } };
+        const ss = stylesToElementorSettings(styles, 'icon-box');
+        return {
+          widget: 'icon-box',
+          badge: tag,
+          preview: `icon + "${(title || text).slice(0, 40)}"`,
+          settings: {
+            title_text: title || text.slice(0, 60),
+            description_text: description,
+            ...iconSettings,
+            ...ss,
+          },
+        };
+      }
+    }
 
     // Image-box pattern
     if (childElements.length <= 3) {
@@ -887,6 +945,7 @@ function detectWidgetType(el: Element, styles: ParsedStyles): { widget: WidgetTy
     }
 
     const { direction, columns } = detectLayoutDirection(el, childElements.length, styles);
+
     const badge = direction === 'row' ? `${columns}-col` : 'stack';
     const preview = tag === 'header' ? 'Header section' : tag === 'footer' ? 'Footer section' : tag === 'section' ? 'Section' : direction === 'row' ? `${columns}-column layout` : 'Container';
     const ss = stylesToElementorSettings(styles, 'container');
