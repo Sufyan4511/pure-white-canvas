@@ -717,12 +717,28 @@ function findIconDescendant(el: Element, maxDepth = 3): Element | null {
   return walk(el, 0);
 }
 
-// Extract a Font Awesome icon value from an element's class attribute
-function extractFaIconValue(el: Element): string {
-  const cls = el.getAttribute('class') || '';
-  const faMatch = cls.match(/\b(fa[sr]?\s+fa-[\w-]+|fas\s+fa-[\w-]+|far\s+fa-[\w-]+|fab\s+fa-[\w-]+|fa-[\w-]+)\b/);
-  return faMatch ? faMatch[0].trim() : cls.trim();
+// Extract Elementor selected_icon { value, library } from an element's class attribute.
+function extractFaIcon(el: Element): { value: string; library: string } {
+  const cls = (el.getAttribute('class') || '').trim();
+  // Detect FA style → library
+  let library = 'fa-solid';
+  if (/\bfab\b|\bfa-brands\b/.test(cls)) library = 'fa-brands';
+  else if (/\bfar\b|\bfa-regular\b/.test(cls)) library = 'fa-regular';
+  else if (/\bfal\b|\bfa-light\b/.test(cls)) library = 'fa-light';
+  else if (/\bfas\b|\bfa-solid\b/.test(cls)) library = 'fa-solid';
+  // Find the specific icon name (fa-XYZ, excluding style modifiers)
+  const STYLE_TOKENS = new Set(['fa', 'fas', 'far', 'fab', 'fal', 'fa-solid', 'fa-regular', 'fa-brands', 'fa-light', 'fa-fw', 'fa-lg', 'fa-2x', 'fa-3x', 'fa-spin', 'fa-pulse']);
+  const nameMatch = cls.split(/\s+/).find(c => /^fa-[\w-]+$/.test(c) && !STYLE_TOKENS.has(c));
+  const stylePrefix = library === 'fa-brands' ? 'fab' : library === 'fa-regular' ? 'far' : library === 'fa-light' ? 'fal' : 'fas';
+  const value = nameMatch ? `${stylePrefix} ${nameMatch}` : cls;
+  return { value, library };
 }
+
+// Back-compat shim used elsewhere (returns just the value string)
+function extractFaIconValue(el: Element): string {
+  return extractFaIcon(el).value;
+}
+
 
 
 function detectLayoutDirection(el: Element, childCount: number, styles: ParsedStyles): { direction: 'row' | 'column'; columns: number } {
